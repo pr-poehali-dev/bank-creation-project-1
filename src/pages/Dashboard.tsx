@@ -10,6 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import QRCode from 'qrcode';
+import BottomNav from '@/components/BottomNav';
+import CardTypeSelector from '@/components/CardTypeSelector';
+import VoiceAssistant from '@/components/VoiceAssistant';
+import Investments from '@/components/Investments';
 
 const API_URLS = {
   auth: 'https://functions.poehali.dev/d2a8ceaf-2621-4a04-9ca9-d9492f463324',
@@ -28,6 +32,9 @@ interface BankCard {
   id: number;
   card_number: string;
   card_type: string;
+  card_name?: string;
+  card_category?: string;
+  is_child_card?: boolean;
   balance: number;
   created_at?: string;
 }
@@ -54,6 +61,7 @@ const Dashboard = () => {
   const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
   const [isHotlineOpen, setIsHotlineOpen] = useState(false);
   const [isCallConnecting, setIsCallConnecting] = useState(false);
+  const [isCardSelectorOpen, setIsCardSelectorOpen] = useState(false);
   
   const [transferData, setTransferData] = useState({
     to_identifier: '',
@@ -97,13 +105,13 @@ const Dashboard = () => {
     setTransactions(data.transactions || []);
   };
 
-  const createVirtualCard = async () => {
+  const createCard = async (cardType: string, cardName: string, cardCategory: string, isChildCard: boolean) => {
     if (!user) return;
     
-    if (cards.length >= 3) {
+    if (cards.length >= 10) {
       toast({
         title: 'Ошибка',
-        description: 'Максимум 3 карты на аккаунт',
+        description: 'Максимум 10 карт на аккаунт',
         variant: 'destructive'
       });
       return;
@@ -114,7 +122,10 @@ const Dashboard = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         user_id: user.id,
-        card_type: 'virtual'
+        card_type: cardType,
+        card_name: cardName,
+        card_category: cardCategory,
+        is_child_card: isChildCard
       })
     });
 
@@ -122,10 +133,17 @@ const Dashboard = () => {
     
     if (response.ok) {
       toast({
-        title: 'Успешно!',
-        description: 'Виртуальная карта создана'
+        title: 'Карта создана!',
+        description: `${cardName} успешно добавлена`
       });
       loadCards(user.id);
+      setActiveTab('cards');
+    } else {
+      toast({
+        title: 'Ошибка',
+        description: data.error,
+        variant: 'destructive'
+      });
     }
   };
 
@@ -216,37 +234,61 @@ const Dashboard = () => {
     }
   };
 
-  const handleVoiceCommand = (command: string) => {
+  const handleVoiceCommand = (command: string, mode: string) => {
     const cmd = command.toLowerCase();
     
     if (cmd.includes('перевод') || cmd.includes('отправить')) {
       setActiveTab('transfer');
+      setIsVoiceAssistantOpen(false);
       toast({
         title: 'ОТПК Бот',
         description: 'Открываю раздел переводов'
       });
     } else if (cmd.includes('кредит')) {
       setActiveTab('credit');
+      setIsVoiceAssistantOpen(false);
       toast({
         title: 'ОТПК Бот',
         description: 'Открываю раздел кредитов'
       });
-    } else if (cmd.includes('баланс')) {
+    } else if (cmd.includes('баланс') || cmd.includes('сколько денег')) {
       toast({
         title: 'ОТПК Бот',
-        description: selectedCard ? `Ваш баланс: ${selectedCard.balance} ₽` : 'Нет активной карты'
+        description: selectedCard ? `Ваш баланс: ${selectedCard.balance?.toFixed(2)} ₽` : 'Нет активной карты'
       });
-    } else if (cmd.includes('помощь') || cmd.includes('что умеешь')) {
+    } else if (cmd.includes('инвестиц')) {
+      setActiveTab('investments');
+      setIsVoiceAssistantOpen(false);
       toast({
         title: 'ОТПК Бот',
-        description: 'Я могу: переводить деньги, показывать баланс, оформлять кредиты, звонить на горячую линию'
+        description: 'Открываю раздел инвестиций'
+      });
+    } else if (cmd.includes('история') || cmd.includes('покупал')) {
+      setActiveTab('history');
+      setIsVoiceAssistantOpen(false);
+      toast({
+        title: 'ОТПК Бот',
+        description: 'Показываю историю операций'
+      });
+    } else if (cmd.includes('помощь') || cmd.includes('что умеешь') || cmd.includes('помоги')) {
+      toast({
+        title: 'ОТПК Бот',
+        description: mode === 'child' ? 'Я могу показать деньги, помочь отправить их, и показать покупки!' : 'Я могу: переводить деньги, показывать баланс, оформлять кредиты, управлять инвестициями'
       });
     } else if (cmd.includes('горячая линия') || cmd.includes('позвонить')) {
       handleHotlineCall();
+      setIsVoiceAssistantOpen(false);
+    } else if (cmd.includes('карт')) {
+      setActiveTab('cards');
+      setIsVoiceAssistantOpen(false);
+      toast({
+        title: 'ОТПК Бот',
+        description: 'Показываю ваши карты'
+      });
     } else {
       toast({
         title: 'ОТПК Бот',
-        description: 'Команда не распознана. Скажите "помощь" чтобы узнать, что я умею'
+        description: mode === 'child' ? 'Не понимаю... Скажи "помоги"!' : 'Команда не распознана. Скажите "помощь" чтобы узнать, что я умею'
       });
     }
   };
@@ -302,30 +344,36 @@ const Dashboard = () => {
         </div>
       </nav>
 
-      <div className="container mx-auto px-6 py-8">
+      <div className="container mx-auto px-6 py-8 pb-24">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 glass-effect mb-8">
-            <TabsTrigger value="home" className="data-[state=active]:bg-purple-500">
-              <Icon name="Home" size={20} className="mr-2" />
-              Главная
-            </TabsTrigger>
-            <TabsTrigger value="cards" className="data-[state=active]:bg-purple-500">
-              <Icon name="CreditCard" size={20} className="mr-2" />
-              Карты
-            </TabsTrigger>
-            <TabsTrigger value="transfer" className="data-[state=active]:bg-purple-500">
-              <Icon name="Send" size={20} className="mr-2" />
-              Переводы
-            </TabsTrigger>
-            <TabsTrigger value="credit" className="data-[state=active]:bg-purple-500">
-              <Icon name="TrendingUp" size={20} className="mr-2" />
-              Кредиты
-            </TabsTrigger>
-            <TabsTrigger value="history" className="data-[state=active]:bg-purple-500">
-              <Icon name="History" size={20} className="mr-2" />
-              История
-            </TabsTrigger>
-          </TabsList>
+          <div className="hidden md:block">
+            <TabsList className="grid w-full grid-cols-6 glass-effect mb-8">
+              <TabsTrigger value="home" className="data-[state=active]:bg-purple-500">
+                <Icon name="Home" size={20} className="mr-2" />
+                Главная
+              </TabsTrigger>
+              <TabsTrigger value="cards" className="data-[state=active]:bg-purple-500">
+                <Icon name="CreditCard" size={20} className="mr-2" />
+                Карты
+              </TabsTrigger>
+              <TabsTrigger value="transfer" className="data-[state=active]:bg-purple-500">
+                <Icon name="Send" size={20} className="mr-2" />
+                Переводы
+              </TabsTrigger>
+              <TabsTrigger value="investments" className="data-[state=active]:bg-purple-500">
+                <Icon name="TrendingUp" size={20} className="mr-2" />
+                Инвестиции
+              </TabsTrigger>
+              <TabsTrigger value="credit" className="data-[state=active]:bg-purple-500">
+                <Icon name="Wallet" size={20} className="mr-2" />
+                Кредиты
+              </TabsTrigger>
+              <TabsTrigger value="more" className="data-[state=active]:bg-purple-500">
+                <Icon name="MoreHorizontal" size={20} className="mr-2" />
+                Ещё
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="home">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -360,9 +408,9 @@ const Dashboard = () => {
               <Card className="glass-effect border-white/10 p-8">
                 <h3 className="text-xl font-bold text-white mb-6">Быстрые действия</h3>
                 <div className="space-y-4">
-                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={createVirtualCard}>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setIsCardSelectorOpen(true)}>
                     <Icon name="Plus" size={20} className="mr-2" />
-                    Создать виртуальную карту
+                    Оформить карту
                   </Button>
                   <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setIsVoiceAssistantOpen(true)}>
                     <Icon name="Mic" size={20} className="mr-2" />
@@ -387,7 +435,7 @@ const Dashboard = () => {
                       <Icon name="Wifi" size={20} className="text-white" />
                     </div>
                     <div className="text-white">
-                      <p className="text-xs opacity-80 mb-1">{card.card_type}</p>
+                      <p className="text-xs opacity-80 mb-1">{card.card_name || card.card_type}</p>
                       <p className="text-lg font-bold mb-2">{card.card_number}</p>
                       <p className="text-2xl font-bold">{card.balance.toFixed(2)} ₽</p>
                     </div>
@@ -395,11 +443,11 @@ const Dashboard = () => {
                 </Card>
               ))}
               
-              {cards.length < 3 && (
-                <Card className="glass-effect border-white/10 p-6 hover:scale-105 transition-transform cursor-pointer flex items-center justify-center min-h-[300px]" onClick={createVirtualCard}>
+              {cards.length < 10 && (
+                <Card className="glass-effect border-white/10 p-6 hover:scale-105 transition-transform cursor-pointer flex items-center justify-center min-h-[300px]" onClick={() => setIsCardSelectorOpen(true)}>
                   <div className="text-center">
                     <Icon name="Plus" size={48} className="text-white/50 mx-auto mb-4" />
-                    <p className="text-white">Создать виртуальную карту</p>
+                    <p className="text-white">Оформить карту</p>
                   </div>
                 </Card>
               )}
@@ -517,74 +565,85 @@ const Dashboard = () => {
               )}
             </Card>
           </TabsContent>
+
+          <TabsContent value="investments">
+            <Investments selectedCard={selectedCard} onInvest={(amount, type) => {
+              toast({
+                title: 'Инвестиция оформлена',
+                description: `Инвестировано ${amount} ₽ в ${type}`,
+              });
+            }} />
+          </TabsContent>
+
+          <TabsContent value="more">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+              <Card className="glass-effect border-white/10 p-8">
+                <h3 className="text-2xl font-bold text-white mb-6">Личный кабинет</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4 p-4 glass-effect border-white/10 rounded-lg">
+                    <Icon name="User" size={32} className="text-purple-400" />
+                    <div>
+                      <p className="text-white font-semibold">{user?.name}</p>
+                      <p className="text-gray-400 text-sm">{user?.phone}</p>
+                    </div>
+                  </div>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setActiveTab('cards')}>
+                    <Icon name="CreditCard" size={20} className="mr-2" />
+                    Мои карты ({cards.length})
+                  </Button>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setActiveTab('history')}>
+                    <Icon name="History" size={20} className="mr-2" />
+                    История операций
+                  </Button>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setIsVoiceAssistantOpen(true)}>
+                    <Icon name="Mic" size={20} className="mr-2" />
+                    Голосовой помощник
+                  </Button>
+                </div>
+              </Card>
+
+              <Card className="glass-effect border-white/10 p-8">
+                <h3 className="text-2xl font-bold text-white mb-6">Дополнительно</h3>
+                <div className="space-y-4">
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setIsCardSelectorOpen(true)}>
+                    <Icon name="Plus" size={20} className="mr-2" />
+                    Оформить новую карту
+                  </Button>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => setIsHotlineOpen(true)}>
+                    <Icon name="Phone" size={20} className="mr-2" />
+                    Горячая линия 24/7
+                  </Button>
+                  <Button className="w-full glass-effect text-white border-white/20 justify-start" onClick={() => {
+                    window.open('https://t.me/+QgiLIa1gFRY4Y2Iy', '_blank');
+                  }}>
+                    <Icon name="Smartphone" size={20} className="mr-2" />
+                    Скачать приложение
+                  </Button>
+                  <Button variant="outline" className="w-full glass-effect text-white border-white/20" onClick={logout}>
+                    <Icon name="LogOut" size={20} className="mr-2" />
+                    Выйти из аккаунта
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          </TabsContent>
         </Tabs>
       </div>
 
-      <Dialog open={isVoiceAssistantOpen} onOpenChange={setIsVoiceAssistantOpen}>
-        <DialogContent className="bg-[#1a1625] border-white/10">
-          <DialogHeader>
-            <DialogTitle className="text-2xl text-white flex items-center gap-2">
-              <Icon name="Mic" size={28} />
-              ОТПК Бот - Голосовой помощник
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Скажите команду или введите текст
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="glass-effect border-white/10 p-4 rounded-lg">
-              <p className="text-white text-sm mb-2">Доступные команды:</p>
-              <ul className="text-gray-400 text-sm space-y-1">
-                <li>• "Перевод" - открыть раздел переводов</li>
-                <li>• "Баланс" - показать баланс карты</li>
-                <li>• "Кредит" - оформить кредит</li>
-                <li>• "Горячая линия" - позвонить в поддержку</li>
-                <li>• "Помощь" - список всех команд</li>
-              </ul>
-            </div>
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-            <Input
-              placeholder="Введите команду..."
-              className="glass-effect border-white/10 text-white"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleVoiceCommand(e.currentTarget.value);
-                  e.currentTarget.value = '';
-                }
-              }}
-            />
+      <CardTypeSelector
+        isOpen={isCardSelectorOpen}
+        onClose={() => setIsCardSelectorOpen(false)}
+        onCreateCard={createCard}
+      />
 
-            <Button
-              className="w-full gradient-primary"
-              onClick={() => {
-                if ('webkitSpeechRecognition' in window) {
-                  const recognition = new (window as any).webkitSpeechRecognition();
-                  recognition.lang = 'ru-RU';
-                  recognition.onresult = (event: any) => {
-                    const command = event.results[0][0].transcript;
-                    handleVoiceCommand(command);
-                  };
-                  recognition.start();
-                  toast({
-                    title: 'Слушаю...',
-                    description: 'Говорите команду'
-                  });
-                } else {
-                  toast({
-                    title: 'Ошибка',
-                    description: 'Голосовой ввод не поддерживается',
-                    variant: 'destructive'
-                  });
-                }
-              }}
-            >
-              <Icon name="Mic" size={20} className="mr-2" />
-              Голосовой ввод
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <VoiceAssistant
+        isOpen={isVoiceAssistantOpen}
+        onClose={() => setIsVoiceAssistantOpen(false)}
+        onCommand={handleVoiceCommand}
+        selectedCard={selectedCard}
+      />
 
       <Dialog open={isHotlineOpen} onOpenChange={setIsHotlineOpen}>
         <DialogContent className="bg-[#1a1625] border-white/10">
@@ -642,20 +701,6 @@ const Dashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="fixed bottom-6 right-6 flex flex-col gap-4">
-        <Button
-          className="w-14 h-14 rounded-full gradient-primary shadow-lg"
-          onClick={() => setIsVoiceAssistantOpen(true)}
-        >
-          <Icon name="Mic" size={24} />
-        </Button>
-        <Button
-          className="w-14 h-14 rounded-full bg-green-500 shadow-lg hover:bg-green-600"
-          onClick={() => setIsHotlineOpen(true)}
-        >
-          <Icon name="Phone" size={24} />
-        </Button>
-      </div>
     </div>
   );
 };

@@ -48,7 +48,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         cur.execute(
-            "SELECT id, card_number, card_type, balance, created_at FROM cards WHERE user_id = %s ORDER BY created_at DESC",
+            "SELECT id, card_number, card_type, card_name, card_category, is_child_card, balance, created_at FROM cards WHERE user_id = %s ORDER BY created_at DESC",
             (user_id,)
         )
         cards_data = cur.fetchall()
@@ -59,8 +59,11 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'id': card[0],
                 'card_number': card[1],
                 'card_type': card[2],
-                'balance': float(card[3]),
-                'created_at': card[4].isoformat() if card[4] else None
+                'card_name': card[3],
+                'card_category': card[4],
+                'is_child_card': card[5],
+                'balance': float(card[6]),
+                'created_at': card[7].isoformat() if card[7] else None
             })
         
         cur.close()
@@ -76,6 +79,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body_data = json.loads(event.get('body', '{}'))
         user_id = body_data.get('user_id')
         card_type = body_data.get('card_type', 'virtual')
+        card_name = body_data.get('card_name', 'Виртуальная карта')
+        card_category = body_data.get('card_category', 'debit')
+        is_child_card = body_data.get('is_child_card', False)
         
         if not user_id:
             cur.close()
@@ -89,20 +95,20 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         cur.execute("SELECT COUNT(*) FROM cards WHERE user_id = %s", (user_id,))
         card_count = cur.fetchone()[0]
         
-        if card_count >= 3:
+        if card_count >= 10:
             cur.close()
             conn.close()
             return {
                 'statusCode': 400,
                 'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
-                'body': json.dumps({'error': 'Maximum 3 cards allowed'})
+                'body': json.dumps({'error': 'Maximum 10 cards allowed'})
             }
         
         card_number = generate_card_number()
         
         cur.execute(
-            "INSERT INTO cards (user_id, card_number, card_type, balance) VALUES (%s, %s, %s, 0.00) RETURNING id, card_number, card_type, balance",
-            (user_id, card_number, card_type)
+            "INSERT INTO cards (user_id, card_number, card_type, card_name, card_category, is_child_card, balance) VALUES (%s, %s, %s, %s, %s, %s, 0.00) RETURNING id, card_number, card_type, card_name, card_category, is_child_card, balance",
+            (user_id, card_number, card_type, card_name, card_category, is_child_card)
         )
         new_card = cur.fetchone()
         conn.commit()
@@ -111,7 +117,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'id': new_card[0],
             'card_number': new_card[1],
             'card_type': new_card[2],
-            'balance': float(new_card[3])
+            'card_name': new_card[3],
+            'card_category': new_card[4],
+            'is_child_card': new_card[5],
+            'balance': float(new_card[6])
         }
         
         cur.close()
