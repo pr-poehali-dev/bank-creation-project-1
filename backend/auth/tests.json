@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Register new user",
+      "method": "POST",
+      "body": {
+        "phone": "+79991234567",
+        "name": "Иван Иванов"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "user": {
+          "phone": "string",
+          "name": "string"
+        },
+        "message": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

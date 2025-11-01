@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Create virtual card",
+      "method": "POST",
+      "body": {
+        "user_id": 1,
+        "card_type": "virtual"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "card": {
+          "card_number": "string",
+          "balance": "number"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "transactions": "https://functions.poehali.dev/50deae80-664d-4ee6-89ca-ac2a7d5bee5b",
+  "cards": "https://functions.poehali.dev/2420bae8-4bf1-4f3b-b39c-69b4557d4886",
+  "auth": "https://functions.poehali.dev/d2a8ceaf-2621-4a04-9ca9-d9492f463324",
+  "credit": "https://functions.poehali.dev/48e74b84-b25e-434c-89a5-1c1b76256ea3"
+}

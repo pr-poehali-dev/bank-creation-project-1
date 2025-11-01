@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "Get transactions",
+      "method": "GET",
+      "path": "/?card_id=1",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "transactions": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

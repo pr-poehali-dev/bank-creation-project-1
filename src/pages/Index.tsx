@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,9 +10,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
+const API_URLS = {
+  auth: 'https://functions.poehali.dev/d2a8ceaf-2621-4a04-9ca9-d9492f463324'
+};
+
 const Index = () => {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('home');
   const { toast } = useToast();
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [authData, setAuthData] = useState({ phone: '', name: '' });
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -48,7 +56,7 @@ const Index = () => {
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
                 <Icon name="Sparkles" size={24} className="text-white" />
               </div>
-              <span className="text-2xl font-bold text-white">NeoBank</span>
+              <span className="text-2xl font-bold text-white">ОТПК Банк</span>
             </div>
             
             <div className="hidden md:flex items-center gap-8">
@@ -66,9 +74,81 @@ const Index = () => {
               ))}
             </div>
 
-            <Button className="gradient-primary text-white font-semibold hover:scale-105 transition-transform">
-              Войти
-            </Button>
+            <Dialog open={isLoginOpen} onOpenChange={setIsLoginOpen}>
+              <DialogTrigger asChild>
+                <Button className="gradient-primary text-white font-semibold hover:scale-105 transition-transform">
+                  Войти
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-[#1a1625] border-white/10">
+                <DialogHeader>
+                  <DialogTitle className="text-2xl text-white">Вход в ОТПК Банк</DialogTitle>
+                  <DialogDescription className="text-gray-400">
+                    Введите номер телефона и имя для входа или регистрации
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 mt-4">
+                  <div>
+                    <Label htmlFor="login-phone" className="text-white">Номер телефона</Label>
+                    <Input 
+                      id="login-phone" 
+                      placeholder="+7 (999) 123-45-67" 
+                      className="glass-effect border-white/10 text-white"
+                      value={authData.phone}
+                      onChange={(e) => setAuthData({...authData, phone: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="login-name" className="text-white">Ваше имя</Label>
+                    <Input 
+                      id="login-name" 
+                      placeholder="Иван Иванов" 
+                      className="glass-effect border-white/10 text-white"
+                      value={authData.name}
+                      onChange={(e) => setAuthData({...authData, name: e.target.value})}
+                    />
+                  </div>
+                  <Button 
+                    className="w-full gradient-primary text-white font-semibold"
+                    onClick={async () => {
+                      if (!authData.phone || !authData.name) {
+                        toast({
+                          title: 'Ошибка',
+                          description: 'Заполните все поля',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+                      
+                      const response = await fetch(API_URLS.auth, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(authData)
+                      });
+                      
+                      const data = await response.json();
+                      
+                      if (response.ok) {
+                        localStorage.setItem('bank_user', JSON.stringify(data.user));
+                        toast({
+                          title: 'Успешно!',
+                          description: data.message
+                        });
+                        navigate('/dashboard');
+                      } else {
+                        toast({
+                          title: 'Ошибка',
+                          description: data.error,
+                          variant: 'destructive'
+                        });
+                      }
+                    }}
+                  >
+                    Войти / Зарегистрироваться
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </nav>
@@ -76,7 +156,7 @@ const Index = () => {
       <section className="pt-32 pb-20 px-6 animate-fade-in">
         <div className="container mx-auto text-center">
           <h1 className="text-6xl md:text-8xl font-bold mb-6 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-            Банк будущего
+            ОТПК Банк
           </h1>
           <p className="text-xl md:text-2xl text-gray-300 mb-12 max-w-3xl mx-auto">
             Современные финансовые решения для вашего успеха. Управляйте деньгами легко и безопасно.
@@ -780,7 +860,7 @@ const Index = () => {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
                   <Icon name="Sparkles" size={24} className="text-white" />
                 </div>
-                <span className="text-2xl font-bold text-white">NeoBank</span>
+                <span className="text-2xl font-bold text-white">ОТПК Банк</span>
               </div>
               <p className="text-gray-400">Современный банк для современных людей</p>
             </div>
@@ -819,7 +899,7 @@ const Index = () => {
           </div>
           
           <div className="border-t border-white/10 pt-8 text-center text-gray-400">
-            <p>© 2024 NeoBank. Все права защищены.</p>
+            <p>© 2024 ОТПК Банк. Все права защищены.</p>
           </div>
         </div>
       </footer>
