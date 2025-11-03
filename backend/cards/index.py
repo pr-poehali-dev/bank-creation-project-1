@@ -24,7 +24,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type',
                 'Access-Control-Max-Age': '86400'
             },
@@ -48,7 +48,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         cur.execute(
-            "SELECT id, card_number, card_type, card_name, card_category, is_child_card, balance, created_at FROM cards WHERE user_id = %s ORDER BY created_at DESC",
+            "SELECT id, card_number, card_type, card_name, card_category, is_child_card, balance, created_at, status, credit_limit, credit_used FROM cards WHERE user_id = %s ORDER BY created_at DESC",
             (user_id,)
         )
         cards_data = cur.fetchall()
@@ -63,7 +63,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'card_category': card[4],
                 'is_child_card': card[5],
                 'balance': float(card[6]),
-                'created_at': card[7].isoformat() if card[7] else None
+                'created_at': card[7].isoformat() if card[7] else None,
+                'status': card[8] or 'active',
+                'credit_limit': float(card[9]) if card[9] else None,
+                'credit_used': float(card[10]) if card[10] else None
             })
         
         cur.close()
@@ -73,6 +76,44 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'statusCode': 200,
             'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
             'body': json.dumps({'cards': cards})
+        }
+    
+    if method == 'PUT':
+        body_data = json.loads(event.get('body', '{}'))
+        card_id = body_data.get('card_id')
+        new_status = body_data.get('status')
+        
+        if not card_id or not new_status:
+            cur.close()
+            conn.close()
+            return {
+                'statusCode': 400,
+                'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'card_id and status are required'})
+            }
+        
+        if new_status not in ['active', 'frozen', 'blocked']:
+            cur.close()
+            conn.close()
+            return {
+                'statusCode': 400,
+                'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'Invalid status'})
+            }
+        
+        cur.execute(
+            "UPDATE cards SET status = %s WHERE id = %s",
+            (new_status, card_id)
+        )
+        conn.commit()
+        
+        cur.close()
+        conn.close()
+        
+        return {
+            'statusCode': 200,
+            'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+            'body': json.dumps({'message': 'Card status updated'})
         }
     
     if method == 'POST':

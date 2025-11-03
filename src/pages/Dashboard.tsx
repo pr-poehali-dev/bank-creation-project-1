@@ -37,6 +37,9 @@ interface BankCard {
   is_child_card?: boolean;
   balance: number;
   created_at?: string;
+  status?: string;
+  credit_limit?: number;
+  credit_used?: number;
 }
 
 interface Transaction {
@@ -62,11 +65,15 @@ const Dashboard = () => {
   const [isHotlineOpen, setIsHotlineOpen] = useState(false);
   const [isCallConnecting, setIsCallConnecting] = useState(false);
   const [isCardSelectorOpen, setIsCardSelectorOpen] = useState(false);
+  const [isCardSettingsOpen, setIsCardSettingsOpen] = useState(false);
+  const [cardSettingsCard, setCardSettingsCard] = useState<BankCard | null>(null);
+  const [cardPressTimer, setCardPressTimer] = useState<number | null>(null);
   
   const [transferData, setTransferData] = useState({
     to_identifier: '',
     amount: '',
-    identifier_type: 'card'
+    identifier_type: 'card',
+    bank: 'otpk'
   });
 
   const [creditAmount, setCreditAmount] = useState('');
@@ -171,11 +178,15 @@ const Dashboard = () => {
     const data = await response.json();
 
     if (response.ok) {
+      const bankName = transferData.bank === 'otpk' ? 'ОТПК' : 
+                       transferData.bank === 'tbank' ? 'Т-Банк' :
+                       transferData.bank === 'vtb' ? 'ВТБ' :
+                       transferData.bank === 'sber' ? 'Сбербанк' : 'другой банк';
       toast({
         title: 'Успешно!',
-        description: 'Перевод выполнен'
+        description: `Перевод в ${bankName} выполнен`
       });
-      setTransferData({ to_identifier: '', amount: '', identifier_type: 'card' });
+      setTransferData({ to_identifier: '', amount: '', identifier_type: 'card', bank: 'otpk' });
       if (user) loadCards(user.id);
       loadTransactions(selectedCard.id);
     } else {
@@ -231,6 +242,99 @@ const Dashboard = () => {
       setQrCode(qr);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleCardPress = (card: BankCard) => {
+    const timer = window.setTimeout(() => {
+      setCardSettingsCard(card);
+      setIsCardSettingsOpen(true);
+    }, 500);
+    setCardPressTimer(timer);
+  };
+
+  const handleCardRelease = () => {
+    if (cardPressTimer) {
+      clearTimeout(cardPressTimer);
+      setCardPressTimer(null);
+    }
+  };
+
+  const handleCardStatusChange = async (cardId: number, newStatus: string) => {
+    const response = await fetch(API_URLS.cards, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_id: cardId,
+        status: newStatus
+      })
+    });
+
+    if (response.ok) {
+      toast({
+        title: 'Статус обновлён',
+        description: newStatus === 'frozen' ? 'Карта заморожена' : 
+                     newStatus === 'blocked' ? 'Карта заблокирована' : 'Карта активна'
+      });
+      if (user) loadCards(user.id);
+      setIsCardSettingsOpen(false);
+    } else {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось изменить статус',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleRepayCredit = async (cardId: number, amount: number) => {
+    const response = await fetch(API_URLS.credit, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_id: cardId,
+        repay_amount: amount
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      toast({
+        title: 'Кредит погашен',
+        description: `Погашено ${amount} ₽`
+      });
+      if (user) loadCards(user.id);
+      setIsCardSettingsOpen(false);
+    } else {
+      toast({
+        title: 'Ошибка',
+        description: data.error || 'Не удалось погасить кредит',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!confirm('Вы уверены? Все данные будут удалены безвозвратно.')) return;
+    
+    const response = await fetch(`${API_URLS.auth}?user_id=${user?.id}`, {
+      method: 'DELETE'
+    });
+
+    if (response.ok) {
+      localStorage.removeItem('bank_user');
+      navigate('/');
+      toast({
+        title: 'Аккаунт удалён',
+        description: 'До свидания!'
+      });
+    } else {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось удалить аккаунт',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -428,8 +532,22 @@ const Dashboard = () => {
           <TabsContent value="cards">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {cards.map((card) => (
-                <Card key={card.id} className="glass-effect border-white/10 p-6 hover:scale-105 transition-transform cursor-pointer" onClick={() => setSelectedCard(card)}>
-                  <div className={`w-full h-48 rounded-2xl bg-gradient-to-br ${selectedCard?.id === card.id ? 'from-purple-500 to-blue-500' : 'from-gray-600 to-gray-800'} p-6 flex flex-col justify-between mb-4`}>
+                <Card 
+                  key={card.id} 
+                  className="glass-effect border-white/10 p-6 hover:scale-105 transition-transform cursor-pointer" 
+                  onClick={() => setSelectedCard(card)}
+                  onMouseDown={() => handleCardPress(card)}
+                  onMouseUp={handleCardRelease}
+                  onMouseLeave={handleCardRelease}
+                  onTouchStart={() => handleCardPress(card)}
+                  onTouchEnd={handleCardRelease}
+                >
+                  <div className={`w-full h-48 rounded-2xl bg-gradient-to-br ${selectedCard?.id === card.id ? 'from-purple-500 to-blue-500' : 'from-gray-600 to-gray-800'} p-6 flex flex-col justify-between mb-4 relative`}>
+                    {card.status && card.status !== 'active' && (
+                      <div className="absolute top-2 right-2 px-2 py-1 bg-black/50 rounded text-xs text-white">
+                        {card.status === 'frozen' ? '❄️ Заморожена' : '🔒 Заблокирована'}
+                      </div>
+                    )}
                     <div className="flex justify-between items-start">
                       <Icon name="CreditCard" size={28} className="text-white" />
                       <Icon name="Wifi" size={20} className="text-white" />
@@ -438,6 +556,9 @@ const Dashboard = () => {
                       <p className="text-xs opacity-80 mb-1">{card.card_name || card.card_type}</p>
                       <p className="text-lg font-bold mb-2">{card.card_number}</p>
                       <p className="text-2xl font-bold">{card.balance.toFixed(2)} ₽</p>
+                      {card.credit_used !== undefined && card.credit_used > 0 && (
+                        <p className="text-xs mt-1 opacity-80">Кредит: {card.credit_used.toFixed(2)} ₽</p>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -471,6 +592,24 @@ const Dashboard = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {transferData.identifier_type === 'phone' && (
+                  <div>
+                    <Label className="text-white">Банк получателя</Label>
+                    <Select value={transferData.bank} onValueChange={(value) => setTransferData({...transferData, bank: value})}>
+                      <SelectTrigger className="glass-effect border-white/10 text-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1625] border-white/10">
+                        <SelectItem value="otpk">🏦 ОТПК Банк</SelectItem>
+                        <SelectItem value="tbank">💳 Т-Банк</SelectItem>
+                        <SelectItem value="vtb">💼 ВТБ</SelectItem>
+                        <SelectItem value="sber">🟢 Сбербанк</SelectItem>
+                        <SelectItem value="other">🏛️ Другой банк</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div>
                   <Label className="text-white">
@@ -623,6 +762,10 @@ const Dashboard = () => {
                     <Icon name="LogOut" size={20} className="mr-2" />
                     Выйти из аккаунта
                   </Button>
+                  <Button variant="destructive" className="w-full" onClick={handleDeleteAccount}>
+                    <Icon name="Trash2" size={20} className="mr-2" />
+                    Удалить аккаунт
+                  </Button>
                 </div>
               </Card>
             </div>
@@ -644,6 +787,85 @@ const Dashboard = () => {
         onCommand={handleVoiceCommand}
         selectedCard={selectedCard}
       />
+
+      <Dialog open={isCardSettingsOpen} onOpenChange={setIsCardSettingsOpen}>
+        <DialogContent className="bg-[#1a1625] border-white/10">
+          <DialogHeader>
+            <DialogTitle className="text-2xl text-white flex items-center gap-2">
+              <Icon name="Settings" size={28} />
+              Настройки карты
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {cardSettingsCard?.card_name || cardSettingsCard?.card_type} • {cardSettingsCard?.card_number}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="glass-effect border-white/10 p-4 rounded-lg">
+              <p className="text-white mb-2">Баланс: {cardSettingsCard?.balance.toFixed(2)} ₽</p>
+              {cardSettingsCard?.credit_used !== undefined && cardSettingsCard.credit_used > 0 && (
+                <p className="text-yellow-400">Задолженность: {cardSettingsCard.credit_used.toFixed(2)} ₽</p>
+              )}
+              <p className="text-gray-400 text-sm mt-2">Статус: {
+                cardSettingsCard?.status === 'frozen' ? '❄️ Заморожена' :
+                cardSettingsCard?.status === 'blocked' ? '🔒 Заблокирована' : '✅ Активна'
+              }</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-white font-semibold">Управление картой:</p>
+              
+              {cardSettingsCard?.status !== 'frozen' && cardSettingsCard?.status !== 'blocked' && (
+                <Button 
+                  className="w-full glass-effect text-white border-white/20 justify-start"
+                  onClick={() => cardSettingsCard && handleCardStatusChange(cardSettingsCard.id, 'frozen')}
+                >
+                  <Icon name="Snowflake" size={20} className="mr-2" />
+                  Заморозить карту
+                </Button>
+              )}
+              
+              {cardSettingsCard?.status === 'frozen' && (
+                <Button 
+                  className="w-full glass-effect text-white border-white/20 justify-start"
+                  onClick={() => cardSettingsCard && handleCardStatusChange(cardSettingsCard.id, 'active')}
+                >
+                  <Icon name="Unlock" size={20} className="mr-2" />
+                  Разморозить карту
+                </Button>
+              )}
+              
+              {cardSettingsCard?.status !== 'blocked' && (
+                <Button 
+                  variant="destructive"
+                  className="w-full justify-start"
+                  onClick={() => cardSettingsCard && handleCardStatusChange(cardSettingsCard.id, 'blocked')}
+                >
+                  <Icon name="Lock" size={20} className="mr-2" />
+                  Заблокировать карту
+                </Button>
+              )}
+
+              {cardSettingsCard?.credit_used !== undefined && cardSettingsCard.credit_used > 0 && (
+                <div className="pt-4 border-t border-white/10">
+                  <p className="text-white font-semibold mb-2">Погашение кредита:</p>
+                  <Button 
+                    className="w-full gradient-primary"
+                    onClick={() => {
+                      if (cardSettingsCard && confirm(`Погасить всю задолженность ${cardSettingsCard.credit_used.toFixed(2)} ₽?`)) {
+                        handleRepayCredit(cardSettingsCard.id, cardSettingsCard.credit_used);
+                      }
+                    }}
+                  >
+                    <Icon name="CreditCard" size={20} className="mr-2" />
+                    Погасить полностью ({cardSettingsCard.credit_used.toFixed(2)} ₽)
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isHotlineOpen} onOpenChange={setIsHotlineOpen}>
         <DialogContent className="bg-[#1a1625] border-white/10">

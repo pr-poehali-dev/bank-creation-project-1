@@ -18,11 +18,39 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'statusCode': 200,
             'headers': {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type',
                 'Access-Control-Max-Age': '86400'
             },
             'body': ''
+        }
+    
+    if method == 'DELETE':
+        params = event.get('queryStringParameters') or {}
+        user_id = params.get('user_id')
+        
+        if not user_id:
+            return {
+                'statusCode': 400,
+                'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+                'body': json.dumps({'error': 'user_id is required'})
+            }
+        
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor()
+        
+        cur.execute("DELETE FROM transactions WHERE from_card_id IN (SELECT id FROM cards WHERE user_id = %s) OR to_card_id IN (SELECT id FROM cards WHERE user_id = %s)", (user_id, user_id))
+        cur.execute("DELETE FROM cards WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {
+            'statusCode': 200,
+            'headers': {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'},
+            'body': json.dumps({'message': 'Account deleted successfully'})
         }
     
     if method != 'POST':
